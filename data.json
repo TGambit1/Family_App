@@ -1,0 +1,36 @@
+{
+  "users": [
+    {
+      "id": "user1",
+      "name": "Admin",
+      "role": "owner"
+    }
+  ],
+  "posts": [],
+  "tasks": [],
+  "categories": {
+    "life": [
+      "priorities",
+      "groceryList",
+      "privateStudy",
+      "relationships",
+      "businessProjects"
+    ],
+    "planning": [
+      "ourHealth",
+      "ourFamily",
+      "financial",
+      "wedding",
+      "adventure"
+    ],
+    "business": [
+      "bobbysApps",
+      "tone",
+      "ventureInvestments",
+      "realEstatePortfolio",
+      "learningAboutAI",
+      "advisoryConsulting",
+      "promptingDatabase"
+    ]
+  }
+}
