@@ -6,7 +6,7 @@ This repository contains a lightweight proof‑of‑concept for a private family
 
 ```
 family-app-backend/   Express server that exposes a REST API for users, posts and tasks
-family-app-backend/data.json  Example dataset with categories and empty arrays for posts/tasks
+family-app-backend/data.json  Example dataset with categories and empty arrays for posts/tasks (stored at project root as data.json in this setup)
 family-app-frontend/  Next.js application that consumes the API and renders the UI
 family-app-README.md   This file
 ```

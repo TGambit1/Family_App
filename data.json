@@ -1,12 +1,34 @@
 {
   "users": [
     {
-      "id": "user1",
-      "name": "Admin",
-      "role": "owner"
+      "id": "5f94be5a-21f3-4b16-b7a5-743e46b52f92",
+      "name": "Alice",
+      "email": "alice@example.com",
+      "passwordHash": "$2a$10$aDYsCfpeuZYa3FWv8aooVOfToU1nfM9Vdxf/TM4aIEvpBuUU96etu",
+      "role": "owner",
+      "status": "approved",
+      "createdAt": "2025-08-12T23:05:46.051Z"
+    },
+    {
+      "id": "f51e035e-267f-421c-8696-d2234b910567",
+      "name": "Bob",
+      "email": "bob@example.com",
+      "passwordHash": "$2a$10$x2vONqWwMuEmFt60iuGuneSkrB2wTYlByEgGHce4xuTRUIYEz6S/e",
+      "role": "member",
+      "status": "approved",
+      "createdAt": "2025-08-12T23:06:38.411Z"
     }
   ],
-  "posts": [],
+  "posts": [
+    {
+      "id": "c4fd7842-6829-4bae-9dd4-b4908689869a",
+      "userId": "5f94be5a-21f3-4b16-b7a5-743e46b52f92",
+      "category": "life",
+      "subcategory": "relationships",
+      "content": "Hello family!",
+      "createdAt": "2025-08-12T23:06:20.717Z"
+    }
+  ],
   "tasks": [],
   "categories": {
     "life": [

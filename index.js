@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 // Create the express application
 const app = express();
 const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 // Middlewares
 app.use(cors());
@@ -16,7 +19,7 @@ app.use(express.json());
 // demonstration purposes a JSON file keeps the example self‑contained and
 // easy to run without additional setup.  All reads/writes are performed
 // asynchronously to avoid blocking the event loop.
-const dataPath = `${__dirname}/../data.json`;
+const dataPath = `${__dirname}/data.json`;
 
 async function readData() {
   try {
@@ -37,6 +40,26 @@ async function writeData(data) {
   await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
 }
 
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Missing token' });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    req.user = payload; // { id, role }
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || (req.user.role !== 'owner' && req.user.role !== 'admin')) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
 /**
  * Simple helper that returns a flat array of task objects filtered by category
  * and subcategory.  Each task has the shape { id, title, completed, category,
@@ -50,45 +73,103 @@ function filterTasks(tasks, category, subcategory) {
   });
 }
 
-// Endpoint to fetch available categories and subcategories.  Useful to
-// bootstrap the UI when the app first loads.  Returns an object keyed
-// by high‑level group (life/planning/business) where each value is an
-// array of subcategory names.
+// Auth & users
+// Registration: creates a user in "pending" status until admin approves.
+app.post('/api/auth/register', async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email and password are required' });
+  }
+  const data = await readData();
+  const existing = data.users.find(u => u.email?.toLowerCase() === String(email).toLowerCase());
+  if (existing) {
+    return res.status(409).json({ error: 'Email already registered' });
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const hasApprovedAdmin = data.users.some(u => (u.role === 'owner' || u.role === 'admin') && u.status === 'approved');
+  const role = hasApprovedAdmin ? 'member' : 'owner';
+  const status = role === 'owner' ? 'approved' : 'pending';
+  const user = {
+    id: uuidv4(),
+    name,
+    email,
+    passwordHash,
+    role,
+    status,
+    createdAt: new Date().toISOString()
+  };
+  data.users.push(user);
+  await writeData(data);
+  res.status(201).json({ id: user.id, name: user.name, email: user.email, role: user.role, status: user.status });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+  const data = await readData();
+  const user = data.users.find(u => u.email?.toLowerCase() === String(email).toLowerCase());
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  const ok = await bcrypt.compare(password, user.passwordHash || '');
+  if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+  if (user.status !== 'approved') return res.status(403).json({ error: 'Account pending approval' });
+  const token = jwt.sign({ id: user.id, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+});
+
+// Admin: list pending users
+app.get('/api/admin/pending-users', requireAuth, requireAdmin, async (req, res) => {
+  const data = await readData();
+  const pending = data.users.filter(u => u.status === 'pending');
+  res.json(pending.map(u => ({ id: u.id, name: u.name, email: u.email, role: u.role, status: u.status })));
+});
+
+// Admin: approve or deny a user
+app.post('/api/admin/users/:id/approve', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const data = await readData();
+  const user = data.users.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  user.status = 'approved';
+  await writeData(data);
+  res.json({ id: user.id, status: user.status });
+});
+
+app.post('/api/admin/users/:id/deny', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const data = await readData();
+  const idx = data.users.findIndex(u => u.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'User not found' });
+  const [removed] = data.users.splice(idx, 1);
+  await writeData(data);
+  res.json({ id: removed.id, removed: true });
+});
+
+// Endpoint to fetch available categories and subcategories.
 app.get('/api/categories', async (req, res) => {
   const data = await readData();
   res.json(data.categories);
 });
 
-// Endpoint to retrieve all posts or filter them by category or subcategory.
-// Posts are sorted newest first.  Posts are simple objects with the
-// properties { id, userId, category, subcategory, content, createdAt }.
+// Posts
 app.get('/api/posts', async (req, res) => {
   const { category, subcategory } = req.query;
   const data = await readData();
   let posts = data.posts;
-  if (category) {
-    posts = posts.filter(p => p.category === category);
-  }
-  if (subcategory) {
-    posts = posts.filter(p => p.subcategory === subcategory);
-  }
+  if (category) posts = posts.filter(p => p.category === category);
+  if (subcategory) posts = posts.filter(p => p.subcategory === subcategory);
   posts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json(posts);
 });
 
-// Create a new post.  The request body must include at least `content` and
-// optionally `userId`, `category` and `subcategory`.  Missing fields will
-// default to undefined.  The backend does not enforce any schema beyond
-// storing the values provided; validation should occur in the client.
-app.post('/api/posts', async (req, res) => {
-  const { userId, category, subcategory, content } = req.body;
+app.post('/api/posts', requireAuth, async (req, res) => {
+  const { category, subcategory, content } = req.body;
   if (!content || typeof content !== 'string') {
     return res.status(400).json({ error: 'Content is required and must be a string.' });
   }
   const data = await readData();
   const post = {
     id: uuidv4(),
-    userId: userId || null,
+    userId: req.user.id,
     category: category || null,
     subcategory: subcategory || null,
     content: content.trim(),
@@ -99,9 +180,7 @@ app.post('/api/posts', async (req, res) => {
   res.status(201).json(post);
 });
 
-// Endpoint to fetch tasks.  Supports filtering by category and subcategory via
-// query parameters.  Tasks are sorted by creation time ascending to provide
-// a sense of progress.
+// Tasks
 app.get('/api/tasks', async (req, res) => {
   const { category, subcategory } = req.query;
   const data = await readData();
@@ -110,10 +189,7 @@ app.get('/api/tasks', async (req, res) => {
   res.json(tasks);
 });
 
-// Create a new task.  Requires a `title` in the request body.  Category and
-// subcategory are optional but recommended for organisation.  New tasks are
-// marked as incomplete by default.
-app.post('/api/tasks', async (req, res) => {
+app.post('/api/tasks', requireAuth, async (req, res) => {
   const { title, category, subcategory } = req.body;
   if (!title || typeof title !== 'string') {
     return res.status(400).json({ error: 'Title is required and must be a string.' });
@@ -132,8 +208,7 @@ app.post('/api/tasks', async (req, res) => {
   res.status(201).json(task);
 });
 
-// Update a task by ID.  Allows toggling completion status and editing title.
-app.put('/api/tasks/:id', async (req, res) => {
+app.put('/api/tasks/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const { title, completed } = req.body;
   const data = await readData();
@@ -154,8 +229,7 @@ app.put('/api/tasks/:id', async (req, res) => {
   res.json(task);
 });
 
-// Delete a task by ID.
-app.delete('/api/tasks/:id', async (req, res) => {
+app.delete('/api/tasks/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   const data = await readData();
   const index = data.tasks.findIndex(t => t.id === id);
@@ -165,6 +239,25 @@ app.delete('/api/tasks/:id', async (req, res) => {
   const [removed] = data.tasks.splice(index, 1);
   await writeData(data);
   res.json(removed);
+});
+
+// Placeholder Facebook family feed integration
+// In production, exchange a short-lived token for a long-lived one and store per-user.
+// Here we provide a stub that returns posts from our local posts plus a mock fb field.
+app.get('/api/facebook/feed', requireAuth, async (req, res) => {
+  const data = await readData();
+  // Mock: take latest 10 posts and annotate as if from Facebook family group
+  const items = [...data.posts]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 10)
+    .map(p => ({
+      id: `fb_${p.id}`,
+      platform: 'facebook',
+      group: 'family-group',
+      message: p.content,
+      created_time: p.createdAt
+    }));
+  res.json({ items });
 });
 
 // A simple healthcheck endpoint
