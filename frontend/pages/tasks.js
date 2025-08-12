@@ -54,12 +54,15 @@ export default function TasksPage() {
   }
 
   async function toggleTask(id, completed) {
-    await fetch(`${API_URL}/api/tasks/${id}`, {
+    if (!token) return; // must be logged in to change server state
+    const res = await fetch(`${API_URL}/api/tasks/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ completed: !completed })
     });
-    setTasks(prev => prev.map(t => (t.id === id ? { ...t, completed: !completed } : t)));
+    if (res.ok) {
+      setTasks(prev => prev.map(t => (t.id === id ? { ...t, completed: !completed } : t)));
+    }
   }
 
   const progress = tasks.length === 0 ? 0 : (tasks.filter(t => t.completed).length / tasks.length) * 100;
@@ -112,7 +115,7 @@ export default function TasksPage() {
           {tasks.length === 0 && <p>No tasks yet. Add your first one!</p>}
           {tasks.map(task => (
             <div key={task.id} className="card" style={{ display: 'flex', alignItems: 'center' }}>
-              <input type="checkbox" checked={task.completed} onChange={() => toggleTask(task.id, task.completed)} style={{ marginRight: '1rem' }} />
+              <input type="checkbox" checked={task.completed} disabled={!token} onChange={() => toggleTask(task.id, task.completed)} style={{ marginRight: '1rem' }} />
               <div>
                 <p style={{ margin: 0, textDecoration: task.completed ? 'line-through' : 'none' }}>{task.title}</p>
                 <small style={{ color: '#6c757d' }}>{task.category ? `${task.category} › ${task.subcategory || 'general'}` : ''}</small>
