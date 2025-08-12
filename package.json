@@ -3,8 +3,12 @@
   "version": "1.1.0",
   "description": "Backend API for the family social networking application",
   "main": "index.js",
+  "engines": {
+    "node": ">=18 <=22"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "start:src": "node src/index.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
