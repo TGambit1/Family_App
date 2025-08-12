@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: family-app-backend
+    env: node
+    plan: starter
+    branch: main
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: >-
+      bash -c 'mkdir -p /opt/data && [ -f /opt/data/data.json ] || cp ./data.json /opt/data/data.json;
+      rm -f ./data.json && ln -s /opt/data/data.json ./data.json;
+      node index.js'
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+    disks:
+      - name: data
+        mountPath: /opt/data
+        sizeGB: 1
